@@ -44,9 +44,9 @@ st.session_state.setdefault('base', 100)
 st.session_state.setdefault('point', 20)
 
 
-# --- 介面層級強制互斥與自動勾選函數 (v15.0 增加大四喜 vs 大三元互斥) ---
+# --- 介面層級強制互斥與自動勾選函數 (v17.0 調整：用於同步狀態) ---
 def handle_state_exclusion():
-    """在每次互動後，先執行自動勾選，再強制修正衝突的 session state 值"""
+    """在每次互動後，先執行自動勾選，再強制修正衝突的 session state 值 (清除低階選項的勾選狀態)"""
     
     # === 階段 A: 智能自動勾選 (Auto-Inclusion) ===
     
@@ -65,9 +65,9 @@ def handle_state_exclusion():
         st.session_state['chk_4wind_s'] = False 
     
 
-    # === 階段 B: 介面狀態強制互斥與覆蓋 (Exclusion) ===
+    # === 階段 B: 介面狀態強制互斥與覆蓋 (清除狀態) ===
     
-    # 1. 絕對互斥: 大四喜 (16台) vs 大三元 (8台)
+    # 0. 絕對互斥: 大四喜 vs 大三元
     if st.session_state.get('chk_4wind_b'):
         st.session_state['chk_3dragon_b'] = False
         st.session_state['chk_3dragon_s'] = False
@@ -75,42 +75,84 @@ def handle_state_exclusion():
         st.session_state['chk_4wind_b'] = False
         st.session_state['chk_4wind_s'] = False
         
-    # 2. 暗刻衝突處理 (四 > 三)
+    # 1. 暗刻衝突處理 (四 > 三)
     if st.session_state.get('chk_4ank'):
         st.session_state['chk_3ank'] = False
 
-    # 3. 三元牌衝突處理 (大 > 小) 
+    # 2. 三元牌衝突處理 (大 > 小) 
     if st.session_state.get('chk_3dragon_b'):
         st.session_state['chk_3dragon_s'] = False
         
-    # 4. 四喜衝突處理 (大 > 小) 
+    # 3. 四喜衝突處理 (大 > 小) 
     if st.session_state.get('chk_4wind_b'):
         st.session_state['chk_4wind_s'] = False
 
-    # 5. 顏色牌衝突 (字一色 > 清一色 > 混一色)
+    # 4. 顏色牌衝突 (字一色 > 清一色 > 混一色)
     if st.session_state.get('yaku_7'): # 字一色 (最高級)
         st.session_state['yaku_5'] = False 
         st.session_state['yaku_4'] = False 
     elif st.session_state.get('yaku_5'): # 清一色 (次高級)
         st.session_state['yaku_4'] = False 
         
-    # 6. 門清自摸 vs 門清/自摸 衝突處理 (門清自摸 3台 優先)
+    # 5. 門清自摸 vs 門清/自摸 衝突處理 (門清自摸 3台 優先)
     if st.session_state.get('yaku_1'): 
         st.session_state['yaku_0'] = False  
         st.session_state['chk_self'] = False 
 
-    # 7. 全求人 vs 自摸 衝突處理 (全求人優先，強制點砲)
+    # 6. 全求人 vs 自摸 衝突處理 (全求人優先，強制點砲)
     if st.session_state.get('yaku_3') and st.session_state.get('chk_self'):
         st.session_state['chk_self'] = False
 
-    # 8. 平胡 vs 碰碰和 絕對互斥
+    # 7. 平胡 vs 碰碰和 絕對互斥
     if st.session_state.get('yaku_2') and st.session_state.get('yaku_6'):
          st.session_state['yaku_6'] = False
          
     elif st.session_state.get('yaku_6') and st.session_state.get('yaku_2'):
          st.session_state['yaku_2'] = False
+
+# --- 牌型結構檢查函數 (新功能) ---
+def structural_check(st_session):
+    """
+    檢查牌型結構是否超過 4 個面子 (14張牌規則)
+    """
+    errors = []
+    
+    # 計算各類面子數量 (基於已修正的 session_state)
+    
+    is_all_koutsu = st_session.get('yaku_6', False) # 碰碰和 (4刻子)
+    is_four_ankou = st_session.get('chk_4ank', False) # 四暗刻 (4刻子)
+    is_all_shuntsu = st_session.get('yaku_2', False) # 平胡 (4順子)
+
+    K = 0
+    if is_all_koutsu or is_four_ankou:
+        K = 4
+    
+    S = 0
+    if is_all_shuntsu:
+        S = 4
+
+    # 3. 總面子檢查
+    if K == 4 and S == 4:
+        errors.append("❌ **面子結構嚴重衝突 (4K + 4S = 8 面子)**：牌型不能同時是碰碰和/四暗刻和平胡。請只保留一種。")
+    elif K > 0 and S > 0:
+        errors.append("⚠️ **面子結構混合警告 (K+S > 0)**：您勾選了刻子牌型和平胡 (順子) 牌型。請確保總面子數 (K+S) 不超過 4。")
+    elif K > 4:
+        errors.append("❌ **刻子超限 (K>4)**：在 14 張牌規則下最多只能有 4 個刻子。")
+    elif S > 4:
+        errors.append("❌ **順子超限 (S>4)**：在 14 張牌規則下最多只能有 4 個順子。")
+    elif K == 4 and S == 0 and not (st_session.get('yaku_6', False) or st_session.get('chk_4ank', False)):
+         errors.append("⚠️ **刻子牌型數量不一致 (K=4)**：您聲稱有 4 個刻子（如大四喜、大三元），但未勾選碰碰和/四暗刻。請確認牌型是否成立。")
+         
+    # 4. 極致大牌的刻子組成檢查 (非結構錯誤，但需提醒)
+    if st_session.get('chk_4wind_b', False) and K != 4:
+        errors.append("⚠️ **大四喜結構不完整**：大四喜要求 4 個刻子，但您未勾選碰碰和/四暗刻。")
+    if st_session.get('chk_3dragon_b', False) and K != 4:
+        errors.append("⚠️ **大三元結構不完整**：大三元要求 3 個箭牌刻子，其總結構應為 4 面子。")
         
-# --- 最終計算函數 (改為僅計算，不寫入狀態) ---
+    return errors
+
+
+# --- 最終計算函數 (v16.0 加入結構檢查) ---
 def get_final_tai(st_session):
     """
     計算總台數，基於已由 handle_state_exclusion 修正的 session_state。
@@ -233,7 +275,6 @@ def get_final_tai(st_session):
          details.append("💡 排除提醒: 大三元已成立，小三元已自動排除計數。")
     if st.session_state.get('chk_4wind_b', False) and st.session_state.get('chk_4wind_s', False):
          details.append("💡 排除提醒: 大四喜已成立，小四喜已自動排除計數。")
-    # NEW: 大四喜 vs 大三元互斥提醒
     if st.session_state.get('chk_4wind_b', False) and (st.session_state.get('chk_3dragon_b', False) or st.session_state.get('chk_3dragon_s', False)):
          details.append("💡 排除提醒: 大四喜已成立，三元牌系列已自動排除計數。")
     elif st.session_state.get('chk_3dragon_b', False) and (st.session_state.get('chk_4wind_b', False) or st.session_state.get('chk_4wind_s', False)):
@@ -258,7 +299,7 @@ def get_final_tai(st_session):
 
 # --- 頁面基本設定 ---
 st.set_page_config(
-    page_title="雙人麻將計算器 v15.0 (最終穩定版)",
+    page_title="雙人麻將計算器 v17.0 (介面禁用/結構檢查)",
     page_icon="🀄",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -352,7 +393,7 @@ st.divider()
 
 
 # ====================================================================
-# === 區塊 B：狀態與牌型 (移除五暗刻) ======================================
+# === 區塊 B：狀態與牌型 (加入禁用邏輯) ======================================
 # ====================================================================
 
 st.subheader("2. 狀態與牌型") 
@@ -363,11 +404,12 @@ col_status1, col_status2 = st.columns(2)
 with col_status1:
     st.checkbox("我是莊家 (+1台)", key='chk_dealer', on_change=handle_state_exclusion)
     
-    is_self_draw_excluded = st.session_state.get('yaku_1', False) or st.session_state.get('yaku_3', False)
+    # 衝突項目：自摸 (chk_self)
+    is_self_draw_disabled = st.session_state.get('yaku_1', False) or st.session_state.get('yaku_3', False)
     
-    st.checkbox("自摸 (+1台)", key='chk_self', on_change=handle_state_exclusion)
-    if is_self_draw_excluded:
-        st.caption("被門清自摸/全求人排除計數") 
+    st.checkbox("自摸 (+1台)", key='chk_self', on_change=handle_state_exclusion, disabled=is_self_draw_disabled)
+    if is_self_draw_disabled:
+        st.caption("因門清自摸/全求人衝突而禁用") 
         
 with col_status2:
     st.number_input("連莊次數 (n)", min_value=0, step=1, key='chk_lian', on_change=handle_state_exclusion)
@@ -376,14 +418,14 @@ st.write("---")
 
 # 定義牌型字典 (名稱: 台數)
 YAKU_LIST = {
-    "門清": 1,         
-    "門清自摸": 3,     
-    "平胡": 2,         
-    "全求人": 2,         
-    "湊一色 (混一色)": 4, 
-    "清一色": 8,       
-    "對對胡 (碰碰胡)": 4, 
-    "字一色 (全字牌)": 16, 
+    "門清": 1,         # yaku_0
+    "門清自摸": 3,     # yaku_1
+    "平胡": 2,         # yaku_2
+    "全求人": 2,         # yaku_3
+    "湊一色 (混一色)": 4, # yaku_4
+    "清一色": 8,       # yaku_5
+    "對對胡 (碰碰胡)": 4, # yaku_6
+    "字一色 (全字牌)": 16, # yaku_7
 }
 
 # 牌型勾選
@@ -391,31 +433,37 @@ cols = st.columns(4)
 for i, (name, tai) in enumerate(YAKU_LIST.items()):
     key = f"yaku_{i}"
     
-    with cols[(i*2) % 4]:
-        st.checkbox(f"{name} ({tai}台)", key=key, on_change=handle_state_exclusion)
+    # 判斷禁用狀態
+    is_disabled = False
     
-    # 加入衝突提醒 (只讀判斷)
+    if key == 'yaku_0': # 門清
+        is_disabled = st.session_state.get('yaku_1', False)
+    elif key == 'yaku_4': # 混一色
+        is_disabled = st.session_state.get('yaku_5', False) or st.session_state.get('yaku_7', False)
+    elif key == 'yaku_5': # 清一色
+        is_disabled = st.session_state.get('yaku_7', False)
+    elif key == 'yaku_2': # 平胡
+        is_disabled = st.session_state.get('yaku_6', False)
+    elif key == 'yaku_6': # 碰碰胡
+        is_disabled = st.session_state.get('yaku_2', False)
+    
+    with cols[(i*2) % 4]:
+        st.checkbox(f"{name} ({tai}台)", key=key, on_change=handle_state_exclusion, disabled=is_disabled)
+    
+    # 加入禁用提醒
     with cols[(i*2) % 4 + 1]:
-        if (key == 'yaku_0' and st.session_state.get('yaku_1', False)):
-            st.caption("被門清自摸排除")
-        elif (key == 'yaku_4' and (st.session_state.get('yaku_5', False) or st.session_state.get('yaku_7', False))):
-            st.caption("被高階色牌排除")
-        elif (key == 'yaku_5' and st.session_state.get('yaku_7', False)):
-            st.caption("被字一色排除")
-        elif (key == 'yaku_2' and st.session_state.get('yaku_6', False)):
-             st.caption("被碰碰和排除")
-        elif (key == 'yaku_6' and st.session_state.get('yaku_2', False)):
-             st.caption("被平胡排除")
-
+        if is_disabled:
+            st.caption("因衝突選項已禁用")
             
 # 暗刻系列
 st.write("---")
 st.write("🌑 **暗刻計算** (擇一勾選)")
 col_ank = st.columns(4) 
 
-col_ank[0].checkbox("三暗刻 (2台)", key='chk_3ank', on_change=handle_state_exclusion)
-if st.session_state.get('chk_4ank', False):
-    col_ank[1].caption("被四暗刻排除") 
+is_3ank_disabled = st.session_state.get('chk_4ank', False) 
+col_ank[0].checkbox("三暗刻 (2台)", key='chk_3ank', on_change=handle_state_exclusion, disabled=is_3ank_disabled)
+if is_3ank_disabled:
+    col_ank[1].caption("被四暗刻禁用") 
 
 col_ank[2].checkbox("四暗刻 (5台)", key='chk_4ank', on_change=handle_state_exclusion) 
 
@@ -425,14 +473,15 @@ st.write("---")
 st.write("🐲 **三元牌大牌**")
 col_dragon_yaku = st.columns(4)
 
-is_s_3dragon_excluded = st.session_state.get('chk_3dragon_b', False) or st.session_state.get('chk_4wind_b', False) # 新增大四喜互斥
-col_dragon_yaku[0].checkbox("小三元 (4台)", key='chk_3dragon_s', on_change=handle_state_exclusion)
-if is_s_3dragon_excluded:
-    col_dragon_yaku[1].caption("被大牌排除")
+is_s_3dragon_disabled = st.session_state.get('chk_3dragon_b', False) or st.session_state.get('chk_4wind_b', False)
+col_dragon_yaku[0].checkbox("小三元 (4台)", key='chk_3dragon_s', on_change=handle_state_exclusion, disabled=is_s_3dragon_disabled)
+if is_s_3dragon_disabled:
+    st.caption("被大牌禁用")
     
-col_dragon_yaku[2].checkbox("大三元 (8台)", key='chk_3dragon_b', on_change=handle_state_exclusion)
-if st.session_state.get('chk_4wind_b', False): # 新增大四喜互斥
-    col_dragon_yaku[3].caption("被大四喜排除")
+is_b_3dragon_disabled = st.session_state.get('chk_4wind_b', False) # 大三元被大四喜禁用
+col_dragon_yaku[2].checkbox("大三元 (8台)", key='chk_3dragon_b', on_change=handle_state_exclusion, disabled=is_b_3dragon_disabled)
+if is_b_3dragon_disabled: 
+    col_dragon_yaku[3].caption("被大四喜禁用")
 
 
 # 四喜牌 
@@ -440,14 +489,30 @@ st.write("---")
 st.write("💨 **四喜牌**")
 col_wind_yaku = st.columns(4)
 
-is_s_4wind_excluded = st.session_state.get('chk_4wind_b', False) or st.session_state.get('chk_3dragon_b', False) # 新增大三元互斥
-col_wind_yaku[0].checkbox("小四喜 (8台)", key='chk_4wind_s', on_change=handle_state_exclusion)
-if is_s_4wind_excluded:
-    col_wind_yaku[1].caption("被大牌排除")
+is_s_4wind_disabled = st.session_state.get('chk_4wind_b', False) or st.session_state.get('chk_3dragon_b', False)
+col_wind_yaku[0].checkbox("小四喜 (8台)", key='chk_4wind_s', on_change=handle_state_exclusion, disabled=is_s_4wind_disabled)
+if is_s_4wind_disabled:
+    col_wind_yaku[1].caption("被大牌禁用")
     
-col_wind_yaku[2].checkbox("大四喜 (16台)", key='chk_4wind_b', on_change=handle_state_exclusion)
-if st.session_state.get('chk_3dragon_b', False): # 新增大三元互斥
-    col_wind_yaku[3].caption("被大三元排除")
+is_b_4wind_disabled = st.session_state.get('chk_3dragon_b', False) # 大四喜被大三元禁用
+col_wind_yaku[2].checkbox("大四喜 (16台)", key='chk_4wind_b', on_change=handle_state_exclusion, disabled=is_b_4wind_disabled)
+if is_b_4wind_disabled: 
+    col_wind_yaku[3].caption("被大三元禁用")
+
+st.divider()
+
+# ====================================================================
+# === 結構檢查結果 (新區塊) ==================================================
+# ====================================================================
+
+structural_errors = structural_check(st.session_state)
+
+st.subheader("⚖️ 牌型結構檢查結果")
+if structural_errors:
+    for error in structural_errors:
+        st.error(error)
+else:
+    st.success("✅ 牌型結構符合 14 張牌 (4 面子 + 1 將眼) 的基本要求。")
 
 st.divider()
 

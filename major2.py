@@ -44,7 +44,7 @@ st.session_state.setdefault('base', 100)
 st.session_state.setdefault('point', 20)
 
 
-# --- 介面層級強制互斥與自動勾選函數 (v17.0 調整：用於同步狀態) ---
+# --- 介面層級強制互斥與自動勾選函數 (v18.1 不變) ---
 def handle_state_exclusion():
     """在每次互動後，先執行自動勾選，再強制修正衝突的 session state 值 (清除低階選項的勾選狀態)"""
     
@@ -89,15 +89,15 @@ def handle_state_exclusion():
 
     # 4. 顏色牌衝突 (字一色 > 清一色 > 混一色)
     if st.session_state.get('yaku_7'): # 字一色 (最高級)
-        st.session_state['yaku_5'] = False 
-        st.session_state['yaku_4'] = False 
+        st.session_state['yaku_5'] = False # 清一色
+        st.session_state['yaku_4'] = False # 混一色
     elif st.session_state.get('yaku_5'): # 清一色 (次高級)
-        st.session_state['yaku_4'] = False 
+        st.session_state['yaku_4'] = False # 混一色
         
     # 5. 門清自摸 vs 門清/自摸 衝突處理 (門清自摸 3台 優先)
     if st.session_state.get('yaku_1'): 
-        st.session_state['yaku_0'] = False  
-        st.session_state['chk_self'] = False 
+        st.session_state['yaku_0'] = False  # 門清
+        st.session_state['chk_self'] = False # 自摸
 
     # 6. 全求人 vs 自摸 衝突處理 (全求人優先，強制點砲)
     if st.session_state.get('yaku_3') and st.session_state.get('chk_self'):
@@ -110,49 +110,64 @@ def handle_state_exclusion():
     elif st.session_state.get('yaku_6') and st.session_state.get('yaku_2'):
          st.session_state['yaku_2'] = False
 
-# --- 牌型結構檢查函數 (新功能) ---
+# --- 牌型結構檢查函數 (v18.1 增強: 獨立計算刻子數) ---
 def structural_check(st_session):
     """
     檢查牌型結構是否超過 4 個面子 (14張牌規則)
     """
     errors = []
     
-    # 計算各類面子數量 (基於已修正的 session_state)
+    # 1. 刻子數計算 (K_total)
+    K_total = 0
     
-    is_all_koutsu = st_session.get('yaku_6', False) # 碰碰和 (4刻子)
-    is_four_ankou = st_session.get('chk_4ank', False) # 四暗刻 (4刻子)
-    is_all_shuntsu = st_session.get('yaku_2', False) # 平胡 (4順子)
+    # 檢查是否有任何 4 刻子牌型成立 (碰碰和/四暗刻/大四喜)
+    is_4_koutsu_yaku = st_session.get('yaku_6', False) or st_session.get('chk_4ank', False) or st_session.get('chk_4wind_b', False)
+    
+    if is_4_koutsu_yaku:
+        K_total = 4
+        
+    # 檢查是否有 3 刻子牌型成立 (大三元/小四喜)
+    elif st_session.get('chk_3dragon_b', False) or st_session.get('chk_4wind_s', False):
+        K_total = 3
+    
+    # 檢查是否有 2 刻子牌型成立 (小三元)
+    elif st_session.get('chk_3dragon_s', False):
+        K_total = 2
 
-    K = 0
-    if is_all_koutsu or is_four_ankou:
-        K = 4
-    
-    S = 0
+    # 如果沒有大牌，但勾選了三暗刻，則 K_total = 3 (三暗刻佔用 3 個面子)
+    elif st_session.get('chk_3ank', False):
+        K_total = 3
+        
+    # 2. 順子數計算 (S_total)
+    is_all_shuntsu = st_session.get('yaku_2', False) # 平胡 (4順子)
+    S_total = 0
     if is_all_shuntsu:
-        S = 4
+        S_total = 4
 
     # 3. 總面子檢查
-    if K == 4 and S == 4:
-        errors.append("❌ **面子結構嚴重衝突 (4K + 4S = 8 面子)**：牌型不能同時是碰碰和/四暗刻和平胡。請只保留一種。")
-    elif K > 0 and S > 0:
-        errors.append("⚠️ **面子結構混合警告 (K+S > 0)**：您勾選了刻子牌型和平胡 (順子) 牌型。請確保總面子數 (K+S) 不超過 4。")
-    elif K > 4:
-        errors.append("❌ **刻子超限 (K>4)**：在 14 張牌規則下最多只能有 4 個刻子。")
-    elif S > 4:
-        errors.append("❌ **順子超限 (S>4)**：在 14 張牌規則下最多只能有 4 個順子。")
-    elif K == 4 and S == 0 and not (st_session.get('yaku_6', False) or st_session.get('chk_4ank', False)):
-         errors.append("⚠️ **刻子牌型數量不一致 (K=4)**：您聲稱有 4 個刻子（如大四喜、大三元），但未勾選碰碰和/四暗刻。請確認牌型是否成立。")
-         
-    # 4. 極致大牌的刻子組成檢查 (非結構錯誤，但需提醒)
-    if st_session.get('chk_4wind_b', False) and K != 4:
-        errors.append("⚠️ **大四喜結構不完整**：大四喜要求 4 個刻子，但您未勾選碰碰和/四暗刻。")
-    if st_session.get('chk_3dragon_b', False) and K != 4:
-        errors.append("⚠️ **大三元結構不完整**：大三元要求 3 個箭牌刻子，其總結構應為 4 面子。")
-        
+    total_sets = K_total + S_total
+    
+    if total_sets > 4:
+        errors.append(f"❌ **牌型結構超限 ({total_sets} 面子)**：14 張牌最多只有 4 個面子。請只保留 4 個刻子或 4 個順子 (或混合，但總數必須是 4)。")
+    elif total_sets < 4 and st_session.get('yaku_0', False):
+        errors.append(f"⚠️ **結構不完整 (面子不足)**：您勾選了門清等牌型但面子總數只有 {total_sets} 組。請確認是否遺漏刻子或順子。")
+
+
+    # 4. 風牌/箭牌刻子數量與大牌結構檢查 (輔助提醒)
+    
+    # 計算風/箭刻子實際數量 (來自基礎勾選)
+    dragon_count = sum(st_session.get(d, False) for d in ['dragon_red', 'dragon_green', 'dragon_white'])
+    wind_count = sum(st_session.get(f"wind_set_{i}", False) for i in range(4))
+    
+    if st_session.get('chk_3dragon_b', False) and dragon_count < 3:
+        errors.append(f"⚠️ **大三元刻子不足**：大三元要求中發白 3 個刻子，但您只勾選了 {dragon_count} 個。")
+    if st_session.get('chk_4wind_b', False) and wind_count < 4:
+        errors.append(f"⚠️ **大四喜刻子不足**：大四喜要求東南西北 4 個刻子，但您只勾選了 {wind_count} 個。")
+
     return errors
 
 
-# --- 最終計算函數 (v16.0 加入結構檢查) ---
+# --- 最終計算函數 (v18.1) ---
 def get_final_tai(st_session):
     """
     計算總台數，基於已由 handle_state_exclusion 修正的 session_state。
@@ -299,7 +314,7 @@ def get_final_tai(st_session):
 
 # --- 頁面基本設定 ---
 st.set_page_config(
-    page_title="雙人麻將計算器 v17.0 (介面禁用/結構檢查)",
+    page_title="雙人麻將計算器 v18.1 (精確結構檢查)",
     page_icon="🀄",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -324,7 +339,7 @@ st.markdown("""
 
 # --- 標題區 (不變) ---
 st.title("🀄 雙人麻將：胡牌計算機")
-st.caption("規則：台灣底台制，**13張起始/14張胡牌**，自動處理台數衝突")
+st.caption("規則：台灣底台制，**13張起始/14張胡牌**，介面禁用與結構檢查")
 
 # ====================================================================
 # === 區塊 0：骰莊與門風紀錄 (不變) =======================================

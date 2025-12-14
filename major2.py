@@ -35,7 +35,7 @@ def roll_dice():
 
 # --- 頁面基本設定 ---
 st.set_page_config(
-    page_title="雙人麻將計算器 v8.0",
+    page_title="雙人麻將計算器 v8.1",
     page_icon="🀄",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -86,7 +86,8 @@ with col_result:
 
 # 顯示風台判斷結果
 if st.session_state.wind_tai_type:
-    st.warning(f"當前門風台：擲骰為 **{st.session_state.wind_tai_type}**。只有 **{st.session_state.wind_tai_set[0]}** 和 **{st.session_tai_set[1]}** 的刻子算台 (+1)。")
+    # ***** 修正點: 這裡將 st.session_tai_set 修正為 st.session_state.wind_tai_set *****
+    st.warning(f"當前門風台：擲骰為 **{st.session_state.wind_tai_type}**。只有 **{st.session_state.wind_tai_set[0]}** 和 **{st.session_state.wind_tai_set[1]}** 的刻子算台 (+1)。")
 
 # 檢查並顯示點數相同加倍提醒
 multiplier = 1

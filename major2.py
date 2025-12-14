@@ -1,23 +1,41 @@
 import streamlit as st
 import random
 
-# --- 核心邏輯：擲骰子函數 ---
-# 使用 session_state 儲存擲骰結果，確保頁面不亂跳
+# --- 核心邏輯：擲骰子與風位判定 ---
+# 儲存擲骰結果和風位判斷
 if 'dice_roll' not in st.session_state:
     st.session_state.dice_roll = None
 if 'dice_sum' not in st.session_state:
     st.session_state.dice_sum = None
+if 'wind_tai_type' not in st.session_state: 
+    st.session_state.wind_tai_type = None
+if 'wind_tai_set' not in st.session_state: 
+    st.session_state.wind_tai_set = []
+if 'is_double' not in st.session_state: # 新增：記錄是否點數相同
+    st.session_state.is_double = False
 
 def roll_dice():
-    """模擬擲兩顆六面骰"""
+    """模擬擲兩顆六面骰，判斷奇偶風位，並檢查是否點數相同"""
     d1 = random.randint(1, 6)
     d2 = random.randint(1, 6)
+    total = d1 + d2
+    
     st.session_state.dice_roll = (d1, d2)
-    st.session_state.dice_sum = d1 + d2
+    st.session_state.dice_sum = total
+    st.session_state.is_double = (d1 == d2) # 檢查是否相同點數
+    
+    if total % 2 != 0:
+        # 奇數：東、西算台
+        st.session_state.wind_tai_type = "奇數 (東/西)"
+        st.session_state.wind_tai_set = ["東風", "西風"]
+    else:
+        # 偶數：南、北算台
+        st.session_state.wind_tai_type = "偶數 (南/北)"
+        st.session_state.wind_tai_set = ["南風", "北風"]
 
 # --- 頁面基本設定 ---
 st.set_page_config(
-    page_title="雙人麻將計算器 v5.0",
+    page_title="雙人麻將計算器 v8.0",
     page_icon="🀄",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -42,21 +60,21 @@ st.markdown("""
 
 # --- 標題區 ---
 st.title("🀄 雙人麻將：胡牌計算機")
-st.caption("規則：無花牌、只看門風、字一色 = 16 台")
+st.caption("規則：極簡模式，風台依擲骰奇偶判定")
 
 # --- 核心邏輯設定 ---
 total_tai = 0
 calculation_details = [] 
 
 # ====================================================================
-# === 區塊 0：骰莊與門風紀錄 =============================================
+# === 區塊 0：骰莊與門風紀錄 (新增點數相同加倍提醒) ========================
 # ====================================================================
-st.subheader("🎲 0. 骰莊與門風紀錄")
+st.subheader("🎲 0. 擲骰子判定風台")
 
 col_dice, col_result = st.columns([1, 2])
 
 with col_dice:
-    st.button("擲骰子 (決定莊位/開門)", on_click=roll_dice, type="primary", use_container_width=True)
+    st.button("擲骰子 (決定莊位/風台)", on_click=roll_dice, type="primary", use_container_width=True)
 
 with col_result:
     if st.session_state.dice_roll:
@@ -66,7 +84,16 @@ with col_result:
     else:
         st.metric(label="骰子結果", value="點擊按鈕擲骰")
 
-st.info("💡 **雙人提示：** 骰子結果用於決定莊家，並從莊家開始算位。若開門處為東或西，請確認雙方門風是否正確。")
+# 顯示風台判斷結果
+if st.session_state.wind_tai_type:
+    st.warning(f"當前門風台：擲骰為 **{st.session_state.wind_tai_type}**。只有 **{st.session_state.wind_tai_set[0]}** 和 **{st.session_tai_set[1]}** 的刻子算台 (+1)。")
+
+# 檢查並顯示點數相同加倍提醒
+multiplier = 1
+if st.session_state.is_double:
+    st.error("🚨 **點數相同 (圍骰/豹子)！** 本局總金額需 **乘以兩倍**。")
+    multiplier = 2
+
 st.divider()
 
 # 1. 基礎金額設定
@@ -80,25 +107,16 @@ with st.expander("⚙️ 設定底/台金額 (點擊展開)", expanded=False):
 st.divider()
 
 # ====================================================================
-# === 區塊 A：風牌/字牌 智慧判斷 (只看門風) ================================
+# === 區塊 A：字牌刻子輸入與自動判斷風台 ====================================
 # ====================================================================
 
-st.subheader("1. 門風/字牌判斷 (正位)")
+st.subheader("1. 風/三元牌刻子輸入與台數")
 
-# 風牌選擇清單
-WIND_OPTIONS = ["東風", "南風", "西風", "北風"]
-
-# 玩家輸入：門風 (座位)
-st.markdown("🪑 **請選擇您的門風 (座位)**")
-# 由於雙人通常只坐對家，我們仍列出四個選項，讓使用者根據實際座位決定
-player_position = st.selectbox("我的門風", WIND_OPTIONS, index=1, key='player_pos', label_visibility="collapsed") 
-
-st.write("---")
-
-# 玩家輸入：自己手牌中的風牌刻子/槓子數量
 st.write("請輸入**您有刻子或槓子**的風牌：")
+# 風牌選擇清單 (東南西北)
+WIND_OPTIONS = ["東風", "南風", "西風", "北風"]
 col_input = st.columns(4)
-player_wind_set = [] 
+player_wind_set = []
 for i, wind in enumerate(WIND_OPTIONS):
     with col_input[i]:
         if st.checkbox(wind, key=f"wind_set_{i}"):
@@ -116,35 +134,34 @@ if col_dragon[1].checkbox("發財刻子/槓子", key='dragon_green'):
 if col_dragon[2].checkbox("白板刻子/槓子", key='dragon_white'):
     dragon_tai += 1
 
-# 執行風台判斷
+# 執行風台判斷 (自動判斷)
 current_tai_wind = 0
 
-# 1. 門風台判斷 (有刻子且與門風相同) - 這是唯一剩下的風台判斷
-if player_position in player_wind_set:
-    current_tai_wind += 1
-    calculation_details.append(f"門風 ({player_position}) +1")
+# 1. 風台判斷 (根據擲骰結果)
+if st.session_state.wind_tai_set:
+    for wind in player_wind_set:
+        if wind in st.session_state.wind_tai_set:
+            current_tai_wind += 1
+            calculation_details.append(f"門風台 ({wind}) +1")
 
 # 2. 三元牌台判斷 (用於提醒玩家可能組成大小三元)
 if dragon_tai == 3:
     calculation_details.append("已湊齊三元牌刻子")
 
 total_tai += current_tai_wind
-st.success(f"🀅 門風/三元牌刻子總計：{current_tai_wind} 台")
+st.success(f"🀅 門風台總計：{current_tai_wind} 台")
 st.divider()
 
-# ====================================================================
-# === 區塊 B：花牌判斷 (已移除) =========================================
-# ====================================================================
-# 此處為原來的花牌區，現已移除
 
 # ====================================================================
-# === 區塊 C：狀態與牌型 ===============================================
+# === 區塊 B：狀態與牌型 ===============================================
 # ====================================================================
 
-st.subheader("2. 狀態與牌型") # 原本是 3.，現改為 2.
+st.subheader("2. 狀態與牌型") 
 
 # 莊家/連莊/自摸
 col_status1, col_status2 = st.columns(2)
+
 with col_status1:
     is_dealer = st.checkbox("我是莊家 (+1台)", key='chk_dealer')
     if is_dealer:
@@ -155,7 +172,7 @@ with col_status1:
     if is_self_draw:
         total_tai += 1
         calculation_details.append("自摸 +1")
-
+        
 with col_status2:
     lianzhuang = st.number_input("連莊次數 (n)", min_value=0, step=1, key='chk_lian')
     if lianzhuang > 0:
@@ -212,11 +229,12 @@ if st.checkbox("大三元 (8台)", key='chk_3dragon_b'):
 st.divider()
 
 # ====================================================================
-# === 結算區域 =========================================================
+# === 結算區域 (加入加倍計算) =============================================
 # ====================================================================
 
 # 最終金額計算
-total_money = base_score + (total_tai * point_value)
+calculated_amount = base_score + (total_tai * point_value)
+final_money = calculated_amount * multiplier # 乘以加倍乘數
 
 st.subheader("🎉 最終結算結果")
 
@@ -232,7 +250,11 @@ r_col1, r_col2 = st.columns(2)
 with r_col1:
     st.metric(label="總台數", value=f"{total_tai} 台")
 with r_col2:
-    st.metric(label="應收/應付金額", value=f"$ {total_money}")
+    if multiplier > 1:
+        st.metric(label="應收/應付金額 (加倍後)", value=f"$ {final_money}")
+        st.caption(f"原始金額: ${calculated_amount} x {multiplier} 倍")
+    else:
+        st.metric(label="應收/應付金額", value=f"$ {final_money}")
 
 if total_tai >= 16:
     st.success("超級大牌！恭喜胡牌！")

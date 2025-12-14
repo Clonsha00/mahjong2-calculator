@@ -44,7 +44,7 @@ st.session_state.setdefault('base', 100)
 st.session_state.setdefault('point', 20)
 
 
-# --- 介面層級強制互斥與自動勾選函數 (v18.1 不變) ---
+# --- 介面層級強制互斥與自動勾選函數 (v19.0 不變) ---
 def handle_state_exclusion():
     """在每次互動後，先執行自動勾選，再強制修正衝突的 session state 值 (清除低階選項的勾選狀態)"""
     
@@ -110,7 +110,7 @@ def handle_state_exclusion():
     elif st.session_state.get('yaku_6') and st.session_state.get('yaku_2'):
          st.session_state['yaku_2'] = False
 
-# --- 牌型結構檢查函數 (v18.1 增強: 獨立計算刻子數) ---
+# --- 牌型結構檢查函數 (v19.0 增強: 基礎刻子計數) ---
 def structural_check(st_session):
     """
     檢查牌型結構是否超過 4 個面子 (14張牌規則)
@@ -118,26 +118,33 @@ def structural_check(st_session):
     errors = []
     
     # 1. 刻子數計算 (K_total)
+    
+    # 計算所有基礎字牌刻子數量 (作為面子來源)
+    basic_koutsu_count = sum(st_session.get(f"wind_set_{i}", False) for i in range(4))
+    basic_koutsu_count += sum(st_session.get(d, False) for d in ['dragon_red', 'dragon_green', 'dragon_white'])
+    
     K_total = 0
     
-    # 檢查是否有任何 4 刻子牌型成立 (碰碰和/四暗刻/大四喜)
-    is_4_koutsu_yaku = st_session.get('yaku_6', False) or st_session.get('chk_4ank', False) or st_session.get('chk_4wind_b', False)
+    # 檢查是否有任何 4 面子牌型成立 (優先級高，直接設置 K_total = 4)
+    is_4_sets_koutsu_yaku = st_session.get('yaku_6', False) or st_session.get('chk_4ank', False) or st_session.get('chk_4wind_b', False)
     
-    if is_4_koutsu_yaku:
+    if is_4_sets_koutsu_yaku:
         K_total = 4
         
-    # 檢查是否有 3 刻子牌型成立 (大三元/小四喜)
-    elif st_session.get('chk_3dragon_b', False) or st_session.get('chk_4wind_s', False):
+    # 如果沒有 4 面子牌型，則計算 3/2/1 面子的組合
+    elif st_session.get('chk_3dragon_b', False): # 大三元 = 3 刻子
+        K_total = 3
+    elif st_session.get('chk_4wind_s', False): # 小四喜 = 3 刻子
+        K_total = 3
+    elif st_session.get('chk_3dragon_s', False): # 小三元 = 2 刻子
+        K_total = 2
+    elif st_session.get('chk_3ank', False): # 三暗刻 = 3 刻子
         K_total = 3
     
-    # 檢查是否有 2 刻子牌型成立 (小三元)
-    elif st_session.get('chk_3dragon_s', False):
-        K_total = 2
+    # 如果 K_total 仍然是 0，則使用基礎字牌刻子計數，但不超過 4
+    if K_total == 0:
+        K_total = min(basic_koutsu_count, 4)
 
-    # 如果沒有大牌，但勾選了三暗刻，則 K_total = 3 (三暗刻佔用 3 個面子)
-    elif st_session.get('chk_3ank', False):
-        K_total = 3
-        
     # 2. 順子數計算 (S_total)
     is_all_shuntsu = st_session.get('yaku_2', False) # 平胡 (4順子)
     S_total = 0
@@ -167,7 +174,7 @@ def structural_check(st_session):
     return errors
 
 
-# --- 最終計算函數 (v18.1) ---
+# --- 最終計算函數 (v19.0) ---
 def get_final_tai(st_session):
     """
     計算總台數，基於已由 handle_state_exclusion 修正的 session_state。
@@ -314,7 +321,7 @@ def get_final_tai(st_session):
 
 # --- 頁面基本設定 ---
 st.set_page_config(
-    page_title="雙人麻將計算器 v18.1 (精確結構檢查)",
+    page_title="雙人麻將計算器 v19.0 (修正基礎刻子計數)",
     page_icon="🀄",
     layout="centered",
     initial_sidebar_state="collapsed"

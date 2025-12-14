@@ -32,6 +32,7 @@ def roll_dice():
 
 # --- 狀態初始化 ---
 # 為了讓 checkbox 能夠被控制，需要初始化所有 key
+# 我們必須確保所有鍵值在 get_final_tai 被呼叫前一定存在
 for i in range(4): st.session_state.setdefault(f"wind_set_{i}", False)
 st.session_state.setdefault('chk_dealer', False)
 st.session_state.setdefault('chk_self', False)
@@ -50,7 +51,7 @@ st.session_state.setdefault('base', 100)
 st.session_state.setdefault('point', 20)
 
 
-# --- 最終計算與衝突排除函數 (核心修正: 包含介面狀態控制) ---
+# --- 最終計算與衝突排除函數 (核心修正: 增加鍵值檢查) ---
 def get_final_tai(st_session):
     """
     計算總台數，並在計算前先處理所有衝突選項的狀態。
@@ -58,7 +59,7 @@ def get_final_tai(st_session):
     final_tai = 0
     details = []
     
-    # === 階段 1: 介面狀態強制互斥與覆蓋 ===
+    # === 階段 1: 介面狀態強制互斥與覆蓋 (使用 get() 來確保鍵值存在) ===
     
     # 1. 暗刻衝突處理 (只保留最大)
     if st_session.get('chk_5ank'):
@@ -73,13 +74,13 @@ def get_final_tai(st_session):
         st_session['chk_3dragon_s'] = False
         
     # 3. 清一色 vs 混一色 衝突處理
-    if st_session.get('yaku_5'): # 清一色 (8台)
-        st_session['yaku_4'] = False
+    if st_session.get('yaku_5'): # yaku_5 = 清一色 (8台)
+        st_session['yaku_4'] = False # yaku_4 = 湊一色
         
     # 4. 門清自摸 vs 門清/自摸 衝突處理
-    if st_session.get('yaku_1'): # 門清自摸 (3台)
-        st_session['yaku_0'] = False  # 門清
-        st_session['chk_self'] = False # 自摸
+    if st_session.get('yaku_1'): # yaku_1 = 門清自摸 (3台)
+        st_session['yaku_0'] = False  # yaku_0 = 門清
+        st_session['chk_self'] = False # chk_self = 自摸
 
     # 5. 全求人 vs 自摸 衝突處理
     if st_session.get('yaku_3') and st_session.get('chk_self'):
@@ -90,21 +91,19 @@ def get_final_tai(st_session):
     # === 階段 2: 最終計算 (基於已修正的 session_state) ===
     
     # 判斷關鍵的狀態 (基於修正後的 session_state)
-    is_all_collect = st_session.get('yaku_3')         # yaku_3 = 全求人
-    is_menqing_self_draw = st_session.get('yaku_1')   # yaku_1 = 門清自摸 (3台)
-    is_self_draw = st_session.get('chk_self')         # chk_self = 自摸 (1台)
-    is_menqing = st_session.get('yaku_0')             # yaku_0 = 門清 (1台)
+    is_menqing_self_draw = st_session.get('yaku_1', False)
+    is_self_draw = st_session.get('chk_self', False)
+    is_menqing = st_session.get('yaku_0', False)
     
     
     # --- 1. 狀態台數：莊家 & 連莊 ---
-    if st_session.get('chk_dealer'):
+    if st_session.get('chk_dealer', False):
         final_tai += 1
         details.append("莊家 +1")
 
     # 連莊 (2N+1 台)
     lianzhuang = st_session.get('chk_lian', 0)
     if lianzhuang > 0:
-        # N 次連莊 = (N * 2) + 1 台
         tai_val = lianzhuang * 2 + 1 
         final_tai += tai_val
         details.append(f"連{lianzhuang}拉{lianzhuang} +{tai_val} (2N+1 算法)")
@@ -129,8 +128,9 @@ def get_final_tai(st_session):
     # --- 3. 風台 ---
     current_tai_wind = 0
     player_wind_set = []
+    
     for i in range(4):
-        if st_session.get(f"wind_set_{i}"):
+        if st_session.get(f"wind_set_{i}", False):
             player_wind_set.append(["東風", "南風", "西風", "北風"][i]) 
     
     if st_session.get('wind_tai_set'):
@@ -153,7 +153,7 @@ def get_final_tai(st_session):
     }
     
     for key, data in YAKU_LIST_MAP.items():
-        if st_session.get(key):
+        if st_session.get(key, False):
             # 由於 session_state 已在階段 1 被修正，這裡可以直接累加
             final_tai += data["tai"]
             details.append(f"{data['name']} +{data['tai']}")
@@ -161,13 +161,13 @@ def get_final_tai(st_session):
 
     # --- 5. 暗刻衝突處理 (只保留最大) ---
     ank_tai = 0
-    if st_session.get('chk_5ank'):
+    if st_session.get('chk_5ank', False):
         ank_tai = 8
         details.append("五暗刻 +8")
-    elif st_session.get('chk_4ank'):
+    elif st_session.get('chk_4ank', False):
         ank_tai = 5
         details.append("四暗刻 +5")
-    elif st_session.get('chk_3ank'):
+    elif st_session.get('chk_3ank', False):
         ank_tai = 2
         details.append("三暗刻 +2")
         
@@ -175,10 +175,10 @@ def get_final_tai(st_session):
     
     # --- 6. 三元牌衝突處理 (只保留最大) ---
     dragon_tai = 0
-    if st_session.get('chk_3dragon_b'):
+    if st_session.get('chk_3dragon_b', False):
         dragon_tai = 8
         details.append("大三元 +8")
-    elif st_session.get('chk_3dragon_s'):
+    elif st_session.get('chk_3dragon_s', False):
         dragon_tai = 4
         details.append("小三元 +4")
         
@@ -186,17 +186,17 @@ def get_final_tai(st_session):
     
     # --- 7. 介面提醒 (針對被強制排除的選項) ---
     # 檢查並顯示排除提醒，因為 Checkbox 不會真正變灰
-    if st_session.get('chk_5ank') and (st_session.get('chk_4ank') or st_session.get('chk_3ank')):
+    if st_session.get('chk_5ank', False) and (st_session.get('chk_4ank', False) or st_session.get('chk_3ank', False)):
          details.append("💡 介面提醒: 五暗刻已成立，四暗刻/三暗刻已自動排除計數。")
-    if st_session.get('chk_4ank') and st_session.get('chk_3ank'):
+    if st_session.get('chk_4ank', False) and st_session.get('chk_3ank', False):
          details.append("💡 介面提醒: 四暗刻已成立，三暗刻已自動排除計數。")
-    if st_session.get('chk_3dragon_b') and st_session.get('chk_3dragon_s'):
+    if st_session.get('chk_3dragon_b', False) and st_session.get('chk_3dragon_s', False):
          details.append("💡 介面提醒: 大三元已成立，小三元已自動排除計數。")
-    if st_session.get('yaku_5') and st_session.get('yaku_4'):
+    if st_session.get('yaku_5', False) and st_session.get('yaku_4', False):
          details.append("💡 介面提醒: 清一色已成立，湊一色已自動排除計數。")
-    if st_session.get('yaku_1') and (st_session.get('yaku_0') or st_session.get('chk_self')):
+    if st_session.get('yaku_1', False) and (st_session.get('yaku_0', False) or st_session.get('chk_self', False)):
          details.append("💡 介面提醒: 門清自摸 (3台) 已成立，門清/自摸 (1+1) 已自動排除計數。")
-    if st_session.get('yaku_3') and st_session.get('chk_self'):
+    if st_session.get('yaku_3', False) and st_session.get('chk_self', False):
          details.append("💡 介面提醒: 全求人成立，自摸台數因衝突已自動排除計數。")
 
 
@@ -205,7 +205,7 @@ def get_final_tai(st_session):
 
 # --- 頁面基本設定 ---
 st.set_page_config(
-    page_title="雙人麻將計算器 v10.4 (介面優化)",
+    page_title="雙人麻將計算器 v10.5 (穩定版)",
     page_icon="🀄",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -230,7 +230,7 @@ st.markdown("""
 
 # --- 標題區 (不變) ---
 st.title("🀄 雙人麻將：胡牌計算機")
-st.caption("規則：極簡模式，**介面層級自動處理台數衝突**")
+st.caption("規則：極簡模式，**自動處理台數衝突**")
 
 # ====================================================================
 # === 區塊 0：骰莊與門風紀錄 (不變) =======================================
@@ -266,9 +266,9 @@ st.divider()
 with st.expander("⚙️ 設定底/台金額 (點擊展開)", expanded=False):
     col1, col2 = st.columns(2)
     with col1:
-        base_score = st.number_input("底 ($)", value=100, step=50, key='base')
+        st.number_input("底 ($)", value=st.session_state.get('base'), step=50, key='base')
     with col2:
-        point_value = st.number_input("台 ($)", value=20, step=10, key='point')
+        st.number_input("台 ($)", value=st.session_state.get('point'), step=10, key='point')
 
 st.divider()
 
@@ -311,8 +311,7 @@ with col_status1:
     st.checkbox("我是莊家 (+1台)", key='chk_dealer')
     
     # 衝突項目 (自摸 vs 門清自摸 vs 全求人)
-    # 判斷是否被高階選項排除，用於顯示提醒
-    is_self_draw_excluded = st.session_state.get('yaku_1') or st.session_state.get('yaku_3')
+    is_self_draw_excluded = st.session_state.get('yaku_1', False) or st.session_state.get('yaku_3', False)
     
     st.checkbox("自摸 (+1台)", key='chk_self')
     if is_self_draw_excluded:
@@ -345,9 +344,9 @@ for i, (name, tai) in enumerate(YAKU_LIST.items()):
     
     # 加入衝突提醒
     with cols[(i*2) % 4 + 1]:
-        if (key == 'yaku_0' and st.session_state.get('yaku_1')):
+        if (key == 'yaku_0' and st.session_state.get('yaku_1', False)):
             st.caption("被門清自摸排除")
-        elif (key == 'yaku_4' and st.session_state.get('yaku_5')):
+        elif (key == 'yaku_4' and st.session_state.get('yaku_5', False)):
             st.caption("被清一色排除")
             
 # 暗刻系列
@@ -356,11 +355,11 @@ st.write("🌑 **暗刻計算** (擇一勾選)")
 col_ank = st.columns(6)
 
 col_ank[0].checkbox("三暗刻 (2台)", key='chk_3ank')
-if st.session_state.get('chk_4ank') or st.session_state.get('chk_5ank'):
+if st.session_state.get('chk_4ank', False) or st.session_state.get('chk_5ank', False):
     col_ank[1].caption("被高階暗刻排除")
 
 col_ank[2].checkbox("四暗刻 (5台)", key='chk_4ank')
-if st.session_state.get('chk_5ank'):
+if st.session_state.get('chk_5ank', False):
     col_ank[3].caption("被五暗刻排除")
     
 col_ank[4].checkbox("五暗刻 (8台)", key='chk_5ank')
@@ -371,7 +370,7 @@ st.write("---")
 st.write("🐲 **三元牌大牌**")
 col_dragon_yaku = st.columns(4)
 col_dragon_yaku[0].checkbox("小三元 (4台)", key='chk_3dragon_s')
-if st.session_state.get('chk_3dragon_b'):
+if st.session_state.get('chk_3dragon_b', False):
     col_dragon_yaku[1].caption("被大三元排除")
     
 col_dragon_yaku[2].checkbox("大三元 (8台)", key='chk_3dragon_b')

@@ -17,7 +17,7 @@ def roll_dice():
 
 # --- 頁面基本設定 ---
 st.set_page_config(
-    page_title="麻將台數計算器 v4.0",
+    page_title="雙人麻將計算器 v5.0",
     page_icon="🀄",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -41,26 +41,24 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- 標題區 ---
-st.title("🀄 我的胡牌計算機")
-st.caption("台灣16張 | 🚩 字一色 = 16 台 🚩")
+st.title("🀄 雙人麻將：胡牌計算機")
+st.caption("規則：無花牌、只看門風、字一色 = 16 台")
 
 # --- 核心邏輯設定 ---
 total_tai = 0
 calculation_details = [] 
 
 # ====================================================================
-# === 區塊 0：骰莊與門風紀錄 (新區塊) =====================================
+# === 區塊 0：骰莊與門風紀錄 =============================================
 # ====================================================================
 st.subheader("🎲 0. 骰莊與門風紀錄")
 
 col_dice, col_result = st.columns([1, 2])
 
 with col_dice:
-    # 擲骰按鈕，點擊後會呼叫 roll_dice 函數
     st.button("擲骰子 (決定莊位/開門)", on_click=roll_dice, type="primary", use_container_width=True)
 
 with col_result:
-    # 顯示擲骰結果
     if st.session_state.dice_roll:
         d1, d2 = st.session_state.dice_roll
         total = st.session_state.dice_sum
@@ -68,7 +66,7 @@ with col_result:
     else:
         st.metric(label="骰子結果", value="點擊按鈕擲骰")
 
-st.info("💡 請依照擲骰結果判斷莊家/門風，並手動設定下方「我是莊家」與「我的門風」選項。")
+st.info("💡 **雙人提示：** 骰子結果用於決定莊家，並從莊家開始算位。若開門處為東或西，請確認雙方門風是否正確。")
 st.divider()
 
 # 1. 基礎金額設定
@@ -82,20 +80,18 @@ with st.expander("⚙️ 設定底/台金額 (點擊展開)", expanded=False):
 st.divider()
 
 # ====================================================================
-# === 區塊 A：風牌/字牌 智慧判斷 (使用擲骰結果設定門風) =====================
+# === 區塊 A：風牌/字牌 智慧判斷 (只看門風) ================================
 # ====================================================================
 
-st.subheader("1. 風台/字牌判斷 (正風)")
+st.subheader("1. 門風/字牌判斷 (正位)")
 
 # 風牌選擇清單
 WIND_OPTIONS = ["東風", "南風", "西風", "北風"]
 
-# 玩家輸入：圈風和門風 (用於判斷正風台)
-col_setup1, col_setup2 = st.columns(2)
-with col_setup1:
-    current_wind = st.selectbox("🎯 目前圈風 (場風)", WIND_OPTIONS, index=0, key='circle_wind')
-with col_setup2:
-    player_position = st.selectbox("🪑 我的門風 (座位)", WIND_OPTIONS, index=1, key='player_pos') # 手動選擇門風
+# 玩家輸入：門風 (座位)
+st.markdown("🪑 **請選擇您的門風 (座位)**")
+# 由於雙人通常只坐對家，我們仍列出四個選項，讓使用者根據實際座位決定
+player_position = st.selectbox("我的門風", WIND_OPTIONS, index=1, key='player_pos', label_visibility="collapsed") 
 
 st.write("---")
 
@@ -123,66 +119,29 @@ if col_dragon[2].checkbox("白板刻子/槓子", key='dragon_white'):
 # 執行風台判斷
 current_tai_wind = 0
 
-# 1. 圈風台判斷 (有刻子且與圈風相同)
-if current_wind in player_wind_set:
-    current_tai_wind += 1
-    calculation_details.append(f"圈風 ({current_wind}) +1")
-
-# 2. 門風台判斷 (有刻子且與門風相同)
+# 1. 門風台判斷 (有刻子且與門風相同) - 這是唯一剩下的風台判斷
 if player_position in player_wind_set:
     current_tai_wind += 1
     calculation_details.append(f"門風 ({player_position}) +1")
 
-# 3. 三元牌台判斷 (用於提醒玩家可能組成大小三元)
+# 2. 三元牌台判斷 (用於提醒玩家可能組成大小三元)
 if dragon_tai == 3:
     calculation_details.append("已湊齊三元牌刻子")
 
 total_tai += current_tai_wind
-st.success(f"🀅 正風/三元牌刻子總計：{current_tai_wind} 台")
+st.success(f"🀅 門風/三元牌刻子總計：{current_tai_wind} 台")
 st.divider()
 
-
 # ====================================================================
-# === 區塊 B：花牌判斷 ==================================================
+# === 區塊 B：花牌判斷 (已移除) =========================================
 # ====================================================================
-st.subheader("2. 花牌判斷")
-
-st.warning(f"您的門風是 **{player_position}**。")
-st.info("門風對應正花：東=梅(1)/竹(5)，南=蘭(2)/菊(6)，西=竹(3)/蘭(7)，北=菊(4)/梅(8)。")
-
-col_flower_input = st.columns(2)
-with col_flower_input[0]:
-    total_flower_count = st.number_input("手上花牌總張數 (1~8)", min_value=0, max_value=8, step=1, key='flower_count')
-
-with col_flower_input[1]:
-    correct_flower_count = st.number_input("其中是「正花」張數", min_value=0, max_value=8, step=1, key='correct_flower')
-
-current_tai_flower = 0
-
-# 1. 正花台數
-if correct_flower_count > 0:
-    current_tai_flower = correct_flower_count
-    calculation_details.append(f"正花 +{current_tai_flower}")
-
-# 2. 特殊大牌判斷
-if total_flower_count == 8:
-    current_tai_flower += 8 # 八仙過海
-    calculation_details.append("八仙過海 +8")
-    st.balloons()
-elif total_flower_count == 7:
-    if st.checkbox("確認為七搶一 (+8台，對方一張花)", key='chk_7_1'):
-        current_tai_flower += 8
-        calculation_details.append("七搶一 +8")
-
-total_tai += current_tai_flower
-st.success(f"🌸 花牌總計：{current_tai_flower} 台")
-st.divider()
+# 此處為原來的花牌區，現已移除
 
 # ====================================================================
 # === 區塊 C：狀態與牌型 ===============================================
 # ====================================================================
 
-st.subheader("3. 狀態與牌型")
+st.subheader("2. 狀態與牌型") # 原本是 3.，現改為 2.
 
 # 莊家/連莊/自摸
 col_status1, col_status2 = st.columns(2)

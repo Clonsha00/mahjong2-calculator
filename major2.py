@@ -44,7 +44,23 @@ st.session_state.setdefault('base', 100)
 st.session_state.setdefault('point', 20)
 
 
-# --- 介面層級強制互斥與自動勾選函數 (v19.0 不變) ---
+# --- 輔助函數：檢查字牌刻子數量是否達到上限 ---
+def is_max_koutsu_reached(current_key=None):
+    """檢查目前勾選的字牌刻子數量是否已達 4 個上限"""
+    
+    # 組合所有字牌刻子鍵名
+    koutsu_keys = [f"wind_set_{i}" for i in range(4)] + ['dragon_red', 'dragon_green', 'dragon_white']
+    
+    current_count = 0
+    for key in koutsu_keys:
+        # 如果該鍵名被勾選，且它不是當前正在操作的鍵 (如果有的話)
+        if st.session_state.get(key, False):
+            current_count += 1
+            
+    # 如果已勾選的數量 >= 4，則達到上限
+    return current_count >= 4
+
+# --- 介面層級強制互斥與自動勾選函數 (v20.0 調整：用於同步狀態) ---
 def handle_state_exclusion():
     """在每次互動後，先執行自動勾選，再強制修正衝突的 session state 值 (清除低階選項的勾選狀態)"""
     
@@ -110,7 +126,7 @@ def handle_state_exclusion():
     elif st.session_state.get('yaku_6') and st.session_state.get('yaku_2'):
          st.session_state['yaku_2'] = False
 
-# --- 牌型結構檢查函數 (v19.0 增強: 基礎刻子計數) ---
+# --- 牌型結構檢查函數 (v20.0 包含基礎刻子計數) ---
 def structural_check(st_session):
     """
     檢查牌型結構是否超過 4 個面子 (14張牌規則)
@@ -138,7 +154,7 @@ def structural_check(st_session):
         K_total = 3
     elif st_session.get('chk_3dragon_s', False): # 小三元 = 2 刻子
         K_total = 2
-    elif st_session.get('chk_3ank', False): # 三暗刻 = 3 刻子
+    elif st.session_state.get('chk_3ank', False): # 三暗刻 = 3 刻子
         K_total = 3
     
     # 如果 K_total 仍然是 0，則使用基礎字牌刻子計數，但不超過 4
@@ -174,7 +190,7 @@ def structural_check(st_session):
     return errors
 
 
-# --- 最終計算函數 (v19.0) ---
+# --- 最終計算函數 (v20.0) ---
 def get_final_tai(st_session):
     """
     計算總台數，基於已由 handle_state_exclusion 修正的 session_state。
@@ -321,7 +337,7 @@ def get_final_tai(st_session):
 
 # --- 頁面基本設定 ---
 st.set_page_config(
-    page_title="雙人麻將計算器 v19.0 (修正基礎刻子計數)",
+    page_title="雙人麻將計算器 v20.0 (刻子限制與計數修正)",
     page_icon="🀄",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -389,28 +405,39 @@ with st.expander("⚙️ 設定底/台金額 (點擊展開)", expanded=False):
 st.divider()
 
 # ====================================================================
-# === 區塊 A：字牌刻子輸入與自動判斷風台 (不變) ===============================
+# === 區塊 A：字牌刻子輸入與自動判斷風台 (加入禁用邏輯) =======================
 # ====================================================================
 
 st.subheader("1. 風/三元牌刻子輸入與台數")
+
+# 判斷是否達到 4 刻子上限 (用於禁用未勾選的 Checkbox)
+is_koutsu_max = is_max_koutsu_reached()
 
 st.write("請輸入**您有刻子或槓子**的風牌：")
 # 風牌選擇清單 (東南西北)
 WIND_OPTIONS = ["東風", "南風", "西風", "北風"]
 col_input = st.columns(4)
 for i, wind in enumerate(WIND_OPTIONS):
+    key = f"wind_set_{i}"
+    # 禁用邏輯：如果達到上限，且當前選項未被勾選，則禁用
+    disabled = is_koutsu_max and not st.session_state.get(key, False)
     with col_input[i]:
-        st.checkbox(wind, key=f"wind_set_{i}", on_change=handle_state_exclusion)
+        st.checkbox(wind, key=key, on_change=handle_state_exclusion, disabled=disabled)
 
 # 玩家輸入：三元牌刻子
 st.write("---")
 st.write("三元牌刻子：")
 col_dragon = st.columns(3)
-col_dragon[0].checkbox("紅中刻子/槓子", key='dragon_red', on_change=handle_state_exclusion)
-col_dragon[1].checkbox("發財刻子/槓子", key='dragon_green', on_change=handle_state_exclusion)
-col_dragon[2].checkbox("白板刻子/槓子", key='dragon_white', on_change=handle_state_exclusion)
+dragon_keys = ['dragon_red', 'dragon_green', 'dragon_white']
+for i, name in enumerate(['紅中刻子/槓子', '發財刻子/槓子', '白板刻子/槓子']):
+    key = dragon_keys[i]
+    # 禁用邏輯：如果達到上限，且當前選項未被勾選，則禁用
+    disabled = is_koutsu_max and not st.session_state.get(key, False)
+    with col_dragon[i]:
+        st.checkbox(name, key=key, on_change=handle_state_exclusion, disabled=disabled)
 
-st.info("💡 **風/三元台數** 將在下方結算區**自動計算**。")
+if is_koutsu_max:
+    st.info("ℹ️ **提示：** 字牌刻子已達到 4 組上限，無法再勾選其他字牌刻子。")
 st.divider()
 
 

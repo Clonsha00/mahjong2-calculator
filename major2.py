@@ -11,7 +11,7 @@ if 'wind_tai_type' not in st.session_state:
     st.session_state.wind_tai_type = None
 if 'wind_tai_set' not in st.session_state: 
     st.session_state.wind_tai_set = []
-if 'is_double' not in st.session_state: # 新增：記錄是否點數相同
+if 'is_double' not in st.session_state: 
     st.session_state.is_double = False
 
 def roll_dice():
@@ -33,9 +33,39 @@ def roll_dice():
         st.session_state.wind_tai_type = "偶數 (南/北)"
         st.session_state.wind_tai_set = ["南風", "北風"]
 
+# --- 衝突檢查函數 ---
+def check_conflicts(session_state):
+    """檢查所有勾選選項的邏輯衝突和重複計算"""
+    warnings = []
+    
+    # 1. 自摸 V.S. 全求人 (互斥)
+    if session_state.get('chk_self') and session_state.get('yaku_3'): # yaku_3 = 全求人
+        warnings.append("❌ **自摸 🆚 全求人：** 兩者互斥！全求人通常必須是點砲胡牌。請檢查胡牌方式。")
+        
+    # 2. 暗刻包含關係 (三/四/五)
+    ank_count = 0
+    if session_state.get('chk_5ank'): ank_count += 1
+    if session_state.get('chk_4ank'): ank_count += 1
+    if session_state.get('chk_3ank'): ank_count += 1
+    
+    if ank_count > 1:
+        warnings.append("⚠️ **暗刻重複計算：** 三暗刻、四暗刻、五暗刻是包含關係。建議只勾選最大的那個，否則可能重複計台！")
+        
+    # 3. 大小三元互斥
+    if session_state.get('chk_3dragon_b') and session_state.get('chk_3dragon_s'):
+        warnings.append("❌ **大三元 🆚 小三元：** 兩者互斥，只能成立其中一種。請只勾選最大的（大三元）。")
+
+    # 4. 門清平胡規則提醒 (相容但有爭議)
+    if session_state.get('chk_dealer') or session_state.get('chk_self'):
+        if session_state.get('yaku_2') and session_state.get('yaku_0'): # 平胡 and 門清
+             warnings.append("💡 **門清平胡提醒：** 部分規則中，平胡（2台）與門清（1台）通常為分開計算，請確認規則。")
+
+
+    return warnings
+
 # --- 頁面基本設定 ---
 st.set_page_config(
-    page_title="雙人麻將計算器 v8.1",
+    page_title="雙人麻將計算器 v9.0",
     page_icon="🀄",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -86,7 +116,6 @@ with col_result:
 
 # 顯示風台判斷結果
 if st.session_state.wind_tai_type:
-    # ***** 修正點: 這裡將 st.session_tai_set 修正為 st.session_state.wind_tai_set *****
     st.warning(f"當前門風台：擲骰為 **{st.session_state.wind_tai_type}**。只有 **{st.session_state.wind_tai_set[0]}** 和 **{st.session_state.wind_tai_set[1]}** 的刻子算台 (+1)。")
 
 # 檢查並顯示點數相同加倍提醒
@@ -188,7 +217,7 @@ YAKU_LIST = {
     "門清": 1,
     "門清自摸": 3,
     "平胡": 2,
-    "全求人": 2,
+    "全求人": 2, # yaku_3
     "湊一色 (混一色)": 4,
     "清一色": 8,
     "對對胡 (碰碰胡)": 4,
@@ -197,9 +226,11 @@ YAKU_LIST = {
 
 # 牌型勾選
 cols = st.columns(2)
+# 需要紀錄 key 的順序，以便 check_conflicts 參考
 for i, (name, tai) in enumerate(YAKU_LIST.items()):
+    key_name = f"yaku_{i}" 
     with cols[i % 2]:
-        if st.checkbox(f"{name} ({tai}台)", key=f"yaku_{i}"):
+        if st.checkbox(f"{name} ({tai}台)", key=key_name):
             total_tai += tai
             calculation_details.append(f"{name} +{tai}")
 
@@ -230,6 +261,17 @@ if st.checkbox("大三元 (8台)", key='chk_3dragon_b'):
 st.divider()
 
 # ====================================================================
+# === 衝突警告區塊 (新功能) =============================================
+# ====================================================================
+
+conflict_warnings = check_conflicts(st.session_state)
+if conflict_warnings:
+    st.header("⚠️ 潛在規則衝突警告 ⚠️")
+    for warning in conflict_warnings:
+        st.error(warning)
+    st.divider()
+
+# ====================================================================
 # === 結算區域 (加入加倍計算) =============================================
 # ====================================================================
 
@@ -250,7 +292,7 @@ with st.expander("📝 完整台數明細 (點擊展開)", expanded=False):
 r_col1, r_col2 = st.columns(2)
 with r_col1:
     st.metric(label="總台數", value=f"{total_tai} 台")
-with r_col2:
+with col_status2: # 確保這裡使用 r_col2
     if multiplier > 1:
         st.metric(label="應收/應付金額 (加倍後)", value=f"$ {final_money}")
         st.caption(f"原始金額: ${calculated_amount} x {multiplier} 倍")

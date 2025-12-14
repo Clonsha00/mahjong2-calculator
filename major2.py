@@ -43,7 +43,36 @@ for i in range(8): st.session_state.setdefault(f"yaku_{i}", False)
 st.session_state.setdefault('base', 100)
 st.session_state.setdefault('point', 20)
 
-
+# --- NEW: 一鍵清除所有狀態函數 ---
+def clear_all_states():
+    """重置所有與計算相關的 session_state 鍵值。"""
+    
+    # 牌型和刻子選項
+    for i in range(4): st.session_state[f"wind_set_{i}"] = False
+    st.session_state['chk_dealer'] = False
+    st.session_state['chk_self'] = False
+    st.session_state['chk_lian'] = 0
+    st.session_state['chk_3ank'] = False
+    st.session_state['chk_4ank'] = False
+    st.session_state['chk_3dragon_s'] = False
+    st.session_state['chk_3dragon_b'] = False
+    st.session_state['dragon_red'] = False
+    st.session_state['dragon_green'] = False
+    st.session_state['dragon_white'] = False
+    st.session_state['chk_4wind_s'] = False
+    st.session_state['chk_4wind_b'] = False
+    for i in range(8): st.session_state[f"yaku_{i}"] = False
+    
+    # 擲骰結果 (可選清空)
+    st.session_state.dice_roll = None
+    st.session_state.dice_sum = None
+    st.session_state.wind_tai_type = None
+    st.session_state.wind_tai_set = []
+    st.session_state.is_double = False
+    
+    # 執行一次排除，確保介面同步 (雖然重啟會重新執行，但這裡同步更穩妥)
+    handle_state_exclusion()
+    
 # --- 輔助函數：檢查字牌刻子數量是否達到上限 ---
 def is_max_koutsu_reached(current_key=None):
     """檢查目前勾選的字牌刻子數量是否已達 4 個上限"""
@@ -53,34 +82,41 @@ def is_max_koutsu_reached(current_key=None):
     
     current_count = 0
     for key in koutsu_keys:
-        # 如果該鍵名被勾選，且它不是當前正在操作的鍵 (如果有的話)
+        # 如果該鍵名被勾選
         if st.session_state.get(key, False):
             current_count += 1
             
     # 如果已勾選的數量 >= 4，則達到上限
     return current_count >= 4
 
-# --- 介面層級強制互斥與自動勾選函數 (v20.0 調整：用於同步狀態) ---
+# --- 介面層級強制互斥與自動勾選函數 (v21.0 修正大牌自動清除) ---
 def handle_state_exclusion():
-    """在每次互動後，先執行自動勾選，再強制修正衝突的 session state 值 (清除低階選項的勾選狀態)"""
+    """在每次互動後，先執行自動勾選/清除，再強制修正衝突的 session state 值"""
     
-    # === 階段 A: 智能自動勾選 (Auto-Inclusion) ===
+    # 計算基礎刻子數量
+    wind_sets_count = sum(st.session_state.get(f"wind_set_{i}", False) for i in range(4))
+    dragon_sets_count = sum(st.session_state.get(d, False) for d in ['dragon_red', 'dragon_green', 'dragon_white'])
     
-    # 1. 自動判斷大三元
-    if (st.session_state.get('dragon_red') and 
-        st.session_state.get('dragon_green') and 
-        st.session_state.get('dragon_white')):
+    # === 階段 A: 智能自動勾選 / 被動清除 (Auto-Inclusion/Exclusion) ===
+    
+    # 1. 大三元 (3 箭刻子)
+    if dragon_sets_count >= 3:
         st.session_state['chk_3dragon_b'] = True 
         st.session_state['chk_3dragon_s'] = False 
+    else:
+        # NEW: 如果刻子不足，強制清除大三元/小三元
+        st.session_state['chk_3dragon_b'] = False
+        st.session_state['chk_3dragon_s'] = False
 
-    # 2. 自動判斷大四喜
-    wind_sets_count = sum(st.session_state.get(f"wind_set_{i}", False) for i in range(4))
-    
-    if wind_sets_count == 4:
+    # 2. 大四喜 (4 風刻子)
+    if wind_sets_count >= 4:
         st.session_state['chk_4wind_b'] = True 
         st.session_state['chk_4wind_s'] = False 
+    else:
+        # NEW: 如果刻子不足，強制清除大四喜/小四喜
+        st.session_state['chk_4wind_b'] = False
+        st.session_state['chk_4wind_s'] = False
     
-
     # === 階段 B: 介面狀態強制互斥與覆蓋 (清除狀態) ===
     
     # 0. 絕對互斥: 大四喜 vs 大三元
@@ -126,7 +162,7 @@ def handle_state_exclusion():
     elif st.session_state.get('yaku_6') and st.session_state.get('yaku_2'):
          st.session_state['yaku_2'] = False
 
-# --- 牌型結構檢查函數 (v20.0 包含基礎刻子計數) ---
+# --- 牌型結構檢查函數 (v19.0 包含基礎刻子計數) ---
 def structural_check(st_session):
     """
     檢查牌型結構是否超過 4 個面子 (14張牌規則)
@@ -150,9 +186,9 @@ def structural_check(st_session):
     # 如果沒有 4 面子牌型，則計算 3/2/1 面子的組合
     elif st_session.get('chk_3dragon_b', False): # 大三元 = 3 刻子
         K_total = 3
-    elif st_session.get('chk_4wind_s', False): # 小四喜 = 3 刻子
+    elif st.session_state.get('chk_4wind_s', False): # 小四喜 = 3 刻子
         K_total = 3
-    elif st_session.get('chk_3dragon_s', False): # 小三元 = 2 刻子
+    elif st.session_state.get('chk_3dragon_s', False): # 小三元 = 2 刻子
         K_total = 2
     elif st.session_state.get('chk_3ank', False): # 三暗刻 = 3 刻子
         K_total = 3
@@ -182,15 +218,15 @@ def structural_check(st_session):
     dragon_count = sum(st_session.get(d, False) for d in ['dragon_red', 'dragon_green', 'dragon_white'])
     wind_count = sum(st_session.get(f"wind_set_{i}", False) for i in range(4))
     
-    if st_session.get('chk_3dragon_b', False) and dragon_count < 3:
+    if st.session_state.get('chk_3dragon_b', False) and dragon_count < 3:
         errors.append(f"⚠️ **大三元刻子不足**：大三元要求中發白 3 個刻子，但您只勾選了 {dragon_count} 個。")
-    if st_session.get('chk_4wind_b', False) and wind_count < 4:
+    if st.session_state.get('chk_4wind_b', False) and wind_count < 4:
         errors.append(f"⚠️ **大四喜刻子不足**：大四喜要求東南西北 4 個刻子，但您只勾選了 {wind_count} 個。")
 
     return errors
 
 
-# --- 最終計算函數 (v20.0) ---
+# --- 最終計算函數 (v22.0 不變) ---
 def get_final_tai(st_session):
     """
     計算總台數，基於已由 handle_state_exclusion 修正的 session_state。
@@ -337,7 +373,7 @@ def get_final_tai(st_session):
 
 # --- 頁面基本設定 ---
 st.set_page_config(
-    page_title="雙人麻將計算器 v20.0 (刻子限制與計數修正)",
+    page_title="雙人麻將計算器 v22.0 (一鍵清除)",
     page_icon="🀄",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -360,9 +396,12 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 標題區 (不變) ---
+# --- 標題區 (新增清除按鈕) ---
 st.title("🀄 雙人麻將：胡牌計算機")
 st.caption("規則：台灣底台制，**13張起始/14張胡牌**，介面禁用與結構檢查")
+
+# NEW: 一鍵清除按鈕
+st.button("🔄 一鍵清除所有選項", on_click=clear_all_states, type="secondary", use_container_width=True)
 
 # ====================================================================
 # === 區塊 0：骰莊與門風紀錄 (不變) =======================================
